@@ -182,43 +182,43 @@ def transform_img(img_input,img_exptC,filename,mode='train'):
     return (img_input, img_input.transpose(0,2).transpose(0,1),img_exptC,filename)
 
 def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
-    file = open(os.path.join(root,'train_input.txt'),'r')
+    file = open(os.path.join(root,'train_img.txt'),'r')
     input_files = sorted(file.readlines())
     set1_images = list()
     #set1_expert_files = list()
     for i in range(len(input_files)):
-        input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
-        expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
+        input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
+        expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         set1_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
         if (i>500): break
         #set1_input_files.append(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
         #set1_expert_files.append(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
 
-    file = open(os.path.join(root,'train_label.txt'),'r')
-    input_files = sorted(file.readlines())
-    set2_images = list()
-    for i in range(len(input_files)):
-        input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
-        expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
-        set2_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
-        if (i>500): break
+    # file = open(os.path.join(root,'train_label.txt'),'r')
+    # input_files = sorted(file.readlines())
+    # set2_images = list()
+    # for i in range(len(input_files)):
+    #     input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
+    #     expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
+    #     set2_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
+    #     if (i>500): break
 
-    file = open(os.path.join(root,'test.txt'),'r')
+    file = open(os.path.join(root,'test_img.txt'),'r')
     input_files = sorted(file.readlines())
     test_images = list()
     for i in range(len(input_files)):
-        input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
-        expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
+        input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
+        expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         test_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='test'))
 
-    if combined:
-        set1_images = set1_images + set2_images
+    # if combined:
+    #     set1_images = set1_images + set2_images
     
     return set1_images,test_images
 
 if __name__ == '__main__':
     
-    traindata,testdata = getdataset("../data/fiveK/%s"%opt.dataset,mode='train')
+    traindata,testdata = getdataset("./data/%s"%opt.dataset,mode='train')
     print(len(traindata))
     print('hahaha')
     print(cuda)

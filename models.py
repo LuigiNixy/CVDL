@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import torchvision.models as models
 import torchvision
 import numpy as np
+import scipy
+import cv2
 
 # import mmcv
 # from mmcv.runner import auto_fp16
@@ -188,7 +190,7 @@ class AiLUT(nn.Module):
             self.adaint = AdaInt(
                 n_colors, n_vertices, self.backbone.out_channels, en_adaint_share)
         else:
-            uniform_vertices = torch.arange(n_vertices).div(n_vertices - 1) \
+            self.uniform_vertices = torch.arange(n_vertices).div(n_vertices - 1) \
                                     .repeat(n_colors, 1)
             # self.register_buffer('uniform_vertices', uniform_vertices.unsqueeze(0))
 
@@ -262,6 +264,8 @@ class AiLUT(nn.Module):
             losses['loss_smooth'] = reg_smoothness
         if self.monotonicity_factor > 0:
             losses['loss_mono'] = reg_monotonicity
+        losses['kl'] = (scipy.stats.entropy(vertices.numpy()[0], lq.numpy()[:,:,0]) + scipy.stats.entropy(vertices.numpy()[1], lq.numpy()[:,:,1])
+                         + scipy.stats.entropy(vertices.numpy()[2], lq.numpy()[:,:,2]))
         outputs = dict(
             losses=losses,
             num_samples=len(gt.data),
