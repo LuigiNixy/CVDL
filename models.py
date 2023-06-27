@@ -243,7 +243,7 @@ class AiLUT(nn.Module):
         else:
             vertices = self.uniform_vertices
 
-        outs = ailut_transform(imgs, luts, vertices)
+        outs = None # ailut_transform(imgs, luts, vertices)
 
         return outs, weights, vertices
 

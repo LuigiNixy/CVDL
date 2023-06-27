@@ -52,57 +52,57 @@ class Regularization(torch.nn.Module):
 
 criterion_pixelwise = torch.nn.MSELoss()
 reg = Regularization()
-LUT0 = Generator3DLUT(initialtype='identity')
-LUT1 = Generator3DLUT(initialtype='zero')
-LUT2 = Generator3DLUT(initialtype='zero')
-model = models.AiLUT(backbone='resnet', smooth_factor= 1e-3, monotonicity_factor=1e-2)
+# LUT0 = Generator3DLUT(initialtype='identity')
+# LUT1 = Generator3DLUT(initialtype='zero')
+# LUT2 = Generator3DLUT(initialtype='zero')
+model = models.AiLUT(backbone='res18', smooth_factor= 1e-3, monotonicity_factor=1e-2)
 classifier = Classifier()
-if cuda:
-    LUT0 = LUT0.cuda()
-    LUT1 = LUT1.cuda()
-    LUT2 = LUT2.cuda()
-    classifier = classifier.cuda()
-    criterion_pixelwise=criterion_pixelwise.cuda()
-    reg.cuda()
-    reg.weight_b = reg.weight_b.type(Tensor)
-    reg.weight_r = reg.weight_r.type(Tensor)
-    reg.weight_g = reg.weight_g.type(Tensor)
+# if cuda:
+#     LUT0 = LUT0.cuda()
+#     LUT1 = LUT1.cuda()
+#     LUT2 = LUT2.cuda()
+#     classifier = classifier.cuda()
+#     criterion_pixelwise=criterion_pixelwise.cuda()
+#     reg.cuda()
+#     reg.weight_b = reg.weight_b.type(Tensor)
+#     reg.weight_r = reg.weight_r.type(Tensor)
+#     reg.weight_g = reg.weight_g.type(Tensor)
 opt_func = torch.optim.Adam
 
-def generator_train(img,imgT):
+# def generator_train(img,imgT):
 
-    pred = classifier(img).squeeze()
-    if len(pred.shape) == 1:
-        pred = pred.unsqueeze(0)
-    gen_A0 = LUT0(imgT)
-    gen_A1 = LUT1(imgT)
-    gen_A2 = LUT2(imgT)
+#     pred = classifier(img).squeeze()
+#     if len(pred.shape) == 1:
+#         pred = pred.unsqueeze(0)
+#     gen_A0 = LUT0(imgT)
+#     gen_A1 = LUT1(imgT)
+#     gen_A2 = LUT2(imgT)
 
-    weights_norm = torch.mean(pred ** 2)
+#     weights_norm = torch.mean(pred ** 2)
 
-    combine_A = img.new(img.size())
-    for b in range(img.size(0)):
-        combine_A[b,:,:,:] = pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:] #+ pred[b,3] * gen_A3[b,:,:,:] + pred[b,4] * gen_A4[b,:,:,:]
+#     combine_A = img.new(img.size())
+#     for b in range(img.size(0)):
+#         combine_A[b,:,:,:] = pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:] #+ pred[b,3] * gen_A3[b,:,:,:] + pred[b,4] * gen_A4[b,:,:,:]
 
-    return combine_A, weights_norm
-def generate_img(img,imgT):
-    classifier.eval()
-    pred = classifier(img).squeeze()
-    if len(pred.shape) == 1:
-        pred = pred.unsqueeze(0)
-    gen_A0 = LUT0(imgT)
-    gen_A1 = LUT1(imgT)
-    gen_A2 = LUT2(imgT)
-    combine_A = img.new(img.size())
-    for b in range(img.size(0)):
-        combine_A[b,:,:,:] = pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:]
-    return combine_A
+#     return combine_A, weights_norm
+# def generate_img(img,imgT):
+#     classifier.eval()
+#     pred = classifier(img).squeeze()
+#     if len(pred.shape) == 1:
+#         pred = pred.unsqueeze(0)
+#     gen_A0 = LUT0(imgT)
+#     gen_A1 = LUT1(imgT)
+#     gen_A2 = LUT2(imgT)
+#     combine_A = img.new(img.size())
+#     for b in range(img.size(0)):
+#         combine_A[b,:,:,:] = pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:]
+#     return combine_A
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--epoch", type=int, default=10)
 parser.add_argument("--batchsize",type = int ,default = 1)
 parser.add_argument("--batchview",type = int,default = 50)
-parser.add_argument("--dataset",type=str,default='fiveK')
+parser.add_argument("--dataset",type=str,default='Teal&Orange')
 parser.add_argument("--lr",type = float,default= 0.0001)
 opt = parser.parse_args()
 
@@ -223,9 +223,10 @@ if __name__ == '__main__':
     print('hahaha')
     print(cuda)
     dataloader = DataLoader(traindata,batch_size=opt.batchsize,shuffle=True,num_workers=2)
-    train()
-    for (i,imgs) in enumerate(testdata):
-        results = model.val_step(imgs)
+    print('hahaha')
+    # train()
+    # for (i,imgs) in enumerate(testdata):
+    #     results = model.val_step(imgs)
         # inputA,imgT,expctC,filename = imgs
         # inputA = inputA.to(device)
         # imgT = imgT.to(device)
