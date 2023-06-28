@@ -6,7 +6,8 @@ import torchvision
 import numpy as np
 import scipy
 import cv2
-
+cuda = True if torch.cuda.is_available() else False
+device = 'cuda' if cuda else 'cpu'
 # import mmcv
 # from mmcv.runner import auto_fp16
 
@@ -235,42 +236,52 @@ class AiLUT(nn.Module):
     
     def ailut_transform(self,imgs,luts,vertices):
         #print(vertices)
-        V = vertices * 255
-        I = imgs*255
         L = torch.zeros(self.n_colors,256,dtype = int,requires_grad=False)
         R = torch.zeros(self.n_colors,256,dtype = int,requires_grad=False)
+        Img = torch.zeros(vertices.size(0),imgs.size(2),imgs.size(3),self.n_colors)
         for n in range(vertices.size(0)):
             for color in range(self.n_colors):
                 now = 0
                 for i in range(self.n_vertices):
-                    while (now <= V[n][color][i]): 
+                    while (now <= vertices[n][color][i]*255): 
                         R[color][now] = i
                         now+=1
                         if (now > 255): break
                 now = 255
-                for i in range(self.n_colors-1,-1,-1):
-                    while (now >= V[n][color][i]):
+                for i in range(self.n_vertices-1,-1,-1):
+                    while (now >= vertices[n][color][i]*255):
                         L[color][now] = i
                         now -= 1
                         if (now <0): break
-        # 线性时间复杂度求所有点的相邻8个点，用到了图片颜色的值域是0~255的整数
+            # 线性时间复杂度求所有点的相邻8个点，用到了图片颜色的值域是0~255的整数
+            for color in range(self.n_colors):
+                for i in range(imgs.size(2)):
+                    for j in range(imgs.size(3)):
+                        l = L[color][(imgs[n][color][i][j]*255).int()].item()
+                        r = R[color][(imgs[n][color][i][j]*255).int()].item()
+                        #print(l,r)
+                        Img[n][i][j][color] = (l + (imgs[n][color][i][j] - vertices[n][color][l])/(vertices[n][color][r]-vertices[n][color][l])) *2 / self.n_vertices -1
+        #print(luts.shape,Img.shape)
+        output = F.grid_sample(luts,Img.unsqueeze(1)).squeeze(2)
+        return output
+        '''
         output = torch.zeros(imgs.size(0),self.n_colors,imgs.size(2),imgs.size(3),dtype = float)
         for n in range(imgs.size(0)):
             for i in range(imgs.size(2)):
                 print(i)
                 for j in range(imgs.size(3)):
-                    l0 = L[0][I[n][0][i][j].int()]
-                    r0 = R[0][I[n][0][i][j].int()]
-                    l1 = L[1][I[n][1][i][j].int()]
-                    r1 = R[1][I[n][1][i][j].int()]
-                    l2 = L[2][I[n][2][i][j].int()]
-                    r2 = R[2][I[n][2][i][j].int()]
-                    xd = (imgs[n][0][i][j]-vertices[n][0][l0])
-                    yd = (imgs[n][1][i][j]-vertices[n][1][l1])
-                    zd = (imgs[n][2][i][j]-vertices[n][2][l2])
-                    1-xd = (vertices[n][0][r0]-imgs[n][0][i][j])
-                    1-yd = (vertices[n][1][r1]-imgs[n][1][i][j])
-                    1-zd = (vertices[n][2][r2]-imgs[n][2][i][j])
+                    l0 = L[0][I[n][0][i][j].int()].item()
+                    r0 = R[0][I[n][0][i][j].int()].item()
+                    l1 = L[1][I[n][1][i][j].int()].item()
+                    r1 = R[1][I[n][1][i][j].int()].item()
+                    l2 = L[2][I[n][2][i][j].int()].item()
+                    r2 = R[2][I[n][2][i][j].int()].item()
+                    #xd = (imgs[n][0][i][j]-vertices[n][0][l0])
+                    #yd = (imgs[n][1][i][j]-vertices[n][1][l1])
+                    #zd = (imgs[n][2][i][j]-vertices[n][2][l2])
+                    #1-xd = (vertices[n][0][r0]-imgs[n][0][i][j])
+                    #1-yd = (vertices[n][1][r1]-imgs[n][1][i][j])
+                    #1-zd = (vertices[n][2][r2]-imgs[n][2][i][j])
                     for k in range(self.n_colors):
                         C = luts[n][k][l0][l1][l2]*(vertices[n][0][r0]-imgs[n][0][i][j])*(vertices[n][1][r1]-imgs[n][1][i][j])*(vertices[n][2][r2]-imgs[n][2][i][j])\
                         + luts[n][k][l0][l1][r2]*(vertices[n][0][r0]-imgs[n][0][i][j])*(vertices[n][1][r1]-imgs[n][1][i][j])*(imgs[n][2][i][j]-vertices[n][2][l2])\
@@ -282,7 +293,7 @@ class AiLUT(nn.Module):
                         + luts[n][k][r0][r1][r2]*(imgs[n][0][i][j]-vertices[n][0][l0])*(imgs[n][1][i][j]-vertices[n][1][l1])*(imgs[n][2][i][j]-vertices[n][2][l2])
                         output[n][k][i][j] = C/((vertices[n][0][r0]-vertices[n][0][l0])*(vertices[n][1][r1]-vertices[n][1][l1])*(vertices[n][2][r2]-vertices[n][2][l2]))
         return output
-
+        '''
     def forward_dummy(self, imgs):
         # E: (b, f)
         codes = self.backbone(imgs)
@@ -295,11 +306,14 @@ class AiLUT(nn.Module):
             vertices = self.uniform_vertices
         #print("out")
         outs =  self.ailut_transform(imgs, luts, vertices)
-        print(outs.shpae)
+        #print(outs.shape)
 
         return outs, weights, vertices
 
     def forward(self, lq,gt=None, test_mode=False, **kwargs):
+        #if cuda:
+        #    lq = lq.to('cuda')
+        #    if (gt != None): gt = gt.to('cuda')
         if test_mode:
             return self.forward_test(lq, gt, **kwargs)
         return self.forward_train(lq,gt)
@@ -316,8 +330,8 @@ class AiLUT(nn.Module):
             losses['loss_smooth'] = reg_smoothness
         if self.monotonicity_factor > 0:
             losses['loss_mono'] = reg_monotonicity
-        losses['kl'] = (scipy.stats.entropy(vertices.numpy()[0], lq.numpy()[:,:,0]) + scipy.stats.entropy(vertices.numpy()[1], lq.numpy()[:,:,1])
-                         + scipy.stats.entropy(vertices.numpy()[2], lq.numpy()[:,:,2]))
+        #losses['kl'] = (scipy.stats.entropy(vertices.numpy()[0], lq.numpy()[:,:,0]) + scipy.stats.entropy(vertices.numpy()[1], lq.numpy()[:,:,1])
+        #                 + scipy.stats.entropy(vertices.numpy()[2], lq.numpy()[:,:,2]))
         outputs = dict(
             losses=losses,
             num_samples=len(gt.data),

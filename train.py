@@ -17,10 +17,8 @@ from PIL import Image
 import torchvision.transforms.functional as TF
 import models
 
-cuda = True if torch.cuda.is_available() else False
 cuda = False
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-device = 'cuda' if cuda else 'cpu'
 device = 'cpu'
 
 class Regularization(torch.nn.Module):
@@ -56,7 +54,10 @@ reg = Regularization()
 # LUT1 = Generator3DLUT(initialtype='zero')
 # LUT2 = Generator3DLUT(initialtype='zero')
 model = models.AiLUT(backbone='res18', smooth_factor= 1e-3, monotonicity_factor=1e-2)
-classifier = Classifier()
+if cuda:
+    model = model.cuda()
+    reg = reg.cuda()
+    criterion_pixelwise = criterion_pixelwise.cuda()
 # if cuda:
 #     LUT0 = LUT0.cuda()
 #     LUT1 = LUT1.cuda()
@@ -111,13 +112,14 @@ global dataloader
 def train(R_s = True, R_m = True, lambda_s = 1e-3, lambda_m = 1):
     print(len(dataloader))
     Pretime = time.time()
-    optimizer = opt_func(itertools.chain(model.backbone.parameters(),model.lut_generator.parameters()),lr=opt.lr)
+    optimizer = opt_func(itertools.chain(model.parameters()),lr=opt.lr)
     for epoch in range(opt.epoch):
-        classifier.train()
+        #classifier.train()
         pretime = time.time()
         for i,batch in enumerate(dataloader):
             print('train_step')
             losses, num_samples, results, _ = model.train_step(batch, optimizer=optimizer)
+            if (i % 50 == 0): print(losses)
             # input_A,input_T,real_B,_= batch
             # input_A = input_A.to(device)
             # input_T = input_T.to(device)
@@ -195,6 +197,7 @@ def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
         input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
         expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         set1_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
+        if (i>100): break
         #set1_input_files.append(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
         #set1_expert_files.append(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
 
