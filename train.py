@@ -111,11 +111,12 @@ global dataloader
 def train(R_s = True, R_m = True, lambda_s = 1e-3, lambda_m = 1):
     print(len(dataloader))
     Pretime = time.time()
-    optimizer = opt_func(itertools.chain(classifier.parameters(), LUT0.parameters(), LUT1.parameters(), LUT2.parameters()),lr=opt.lr)
+    optimizer = opt_func(itertools.chain(model.backbone.parameters(),model.lut_generator.parameters()),lr=opt.lr)
     for epoch in range(opt.epoch):
         classifier.train()
         pretime = time.time()
         for i,batch in enumerate(dataloader):
+            print('train_step')
             losses, num_samples, results, _ = model.train_step(batch, optimizer=optimizer)
             # input_A,input_T,real_B,_= batch
             # input_A = input_A.to(device)
@@ -153,8 +154,7 @@ def transform_img(img_input,img_exptC,filename,mode='train'):
     if (mode == 'test'):
         img_input = TF.to_tensor(img_input)
         img_exptC = TF.to_tensor(img_exptC)
-        img_input = (img_input-0.5)*2
-        return (img_input/2 + 0.5, img_input.transpose(0,2).transpose(0,1),img_exptC,filename)
+        return ({'lq':img_input,'gt':img_exptC})
     
     ratio_H = np.random.uniform(0.6,1.0)
     ratio_W = np.random.uniform(0.6,1.0)
@@ -174,12 +174,17 @@ def transform_img(img_input,img_exptC,filename,mode='train'):
 
     a = np.random.uniform(0.8,1.2)
     img_input = TF.adjust_saturation(img_input,a)
-    #img_input = (img_input-0.5)*2
     img_input = TF.to_tensor(img_input)
-    img_input = (img_input-0.5)*2.0
     img_exptC = TF.to_tensor(img_exptC)
-    #input = img_inut[0]
-    return (img_input, img_input.transpose(0,2).transpose(0,1),img_exptC,filename)
+    #sorted_input = []
+   # for color in range(img_input.size(0)):
+    #    Input = []
+    #    for h in range(img_input.size(1)):
+    #        for w in range(img_input.size(2)):
+    #            Input.append((img_input[color,h,w],(h,w)))
+    #    Input.sort()
+    #    sorted_input.append(Input)
+    return ({'lq':img_input,'gt':img_exptC})
 
 def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
     file = open(os.path.join(root,'train_img.txt'),'r')
@@ -190,7 +195,6 @@ def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
         input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
         expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         set1_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
-        if (i>500): break
         #set1_input_files.append(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
         #set1_expert_files.append(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
 
@@ -220,13 +224,12 @@ if __name__ == '__main__':
     
     traindata,testdata = getdataset("./data/%s"%opt.dataset,mode='train')
     print(len(traindata))
-    print('hahaha')
-    print(cuda)
+
     dataloader = DataLoader(traindata,batch_size=opt.batchsize,shuffle=True,num_workers=2)
     print('hahaha')
-    # train()
-    # for (i,imgs) in enumerate(testdata):
-    #     results = model.val_step(imgs)
+    train()
+    #for (i,imgs) in enumerate(testdata):
+    #    results = model.val_step(imgs)
         # inputA,imgT,expctC,filename = imgs
         # inputA = inputA.to(device)
         # imgT = imgT.to(device)
