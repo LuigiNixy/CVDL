@@ -68,7 +68,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--epoch", type=int, default=10)
 parser.add_argument("--batchsize",type = int ,default = 1)
 parser.add_argument("--batchview",type = int,default = 50)
-parser.add_argument("--dataset",type=str,default='fiveK')
+parser.add_argument("--dataset",type=str,default='Teal&Orange')
 parser.add_argument("--lr",type = float,default= 0.00001)
 opt = parser.parse_args()
 
@@ -104,7 +104,7 @@ def train():
     torch.save(classifier.state_dict(), "saved_models/classifier.pth")
 
 def transform_img(img_input,img_exptC,filename,mode='train'):
-
+    print(filename)
     if (mode == 'test'):
         img_input = TF.to_tensor(img_input)
         img_exptC = TF.to_tensor(img_exptC)
@@ -131,53 +131,74 @@ def transform_img(img_input,img_exptC,filename,mode='train'):
     img_input = TF.adjust_saturation(img_input,a)
     #img_input = (img_input-0.5)*2
     img_input = TF.to_tensor(img_input)
+    T = img_input.clone()
+    T=(T*255)
+    N = img_input.size(1)*img_input.size(2)
+    N/=32
+    for color in range(img_input.size(0)):
+        L = [0 for i in range(256)]
+        R = [255 for i in range(256)]
+        preC = 0
+        T1 = torch.flatten(T[color])
+        for i in range(1,32):
+            C = (T1.kthvalue(round(N*i))).values.int().item()
+            if (C == preC): C+=1
+            for j in range(preC,C+1):
+                L[j]=preC
+                R[j]=C
+        def trans(x,*y):
+            l = L[round(x)]
+            r = R[round(x)]
+            return (l + (T[color][i][j]-l)/(r-l))
+        T[color].map_(T[color],trans)
+    T = ((T/255)-0.5)*2.0
+
     img_input = (img_input-0.5)*2.0
     img_exptC = TF.to_tensor(img_exptC)
     #input = img_inut[0]
-    return (img_input, img_input.transpose(0,2).transpose(0,1),img_exptC,filename)
+    return (img_input, T.transpose(0,2).transpose(0,1),img_exptC,filename)
 
 def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
-    file = open(os.path.join(root,'train_input.txt'),'r')
+    file = open(os.path.join(root,'train_img.txt'),'r')
     input_files = sorted(file.readlines())
     set1_images = list()
     #set1_expert_files = list()
     for i in range(len(input_files)):
-        input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
-        expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
+        input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
+        expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         set1_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
-        if (i>100): break
+        if (i>10): break
         #set1_input_files.append(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
         #set1_expert_files.append(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
 
-    file = open(os.path.join(root,'train_label.txt'),'r')
-    input_files = sorted(file.readlines())
-    set2_images = list()
-    for i in range(len(input_files)):
-        input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
-        expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
-        set2_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
-        if (i>100): break
+    # file = open(os.path.join(root,'train_label.txt'),'r')
+    # input_files = sorted(file.readlines())
+    # set2_images = list()
+    # for i in range(len(input_files)):
+    #     input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
+    #     expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
+    #     set2_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
+    #     if (i>500): break
 
-    file = open(os.path.join(root,'test.txt'),'r')
+    file = open(os.path.join(root,'test_img.txt'),'r')
     input_files = sorted(file.readlines())
     test_images = list()
     for i in range(len(input_files)):
-        input_file = Image.open(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
-        expect_file = Image.open(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
+        input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
+        expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         test_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='test'))
+        if (i>10): break
 
-    if combined:
-        set1_images = set1_images + set2_images
+    # if combined:
+    #     set1_images = set1_images + set2_images
     
     return set1_images,test_images
 
 if __name__ == '__main__':
     
     traindata,testdata = getdataset("data/%s"%opt.dataset,mode='train')
-    print(len(traindata))
-    print('hahaha')
-    print(cuda)
     dataloader = DataLoader(traindata,batch_size=opt.batchsize,shuffle=True,num_workers=2)
+    torch.save(dataloader,'dataloader.dat')
     train()
     for (i,imgs) in enumerate(testdata):
         if (i==0):
