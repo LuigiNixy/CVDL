@@ -5,6 +5,7 @@ import os
 import itertools
 import sys
 import time
+import math
 import argparse
 import torch
 import torch.utils.data as Data
@@ -20,7 +21,30 @@ cuda = True if torch.cuda.is_available() else False
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 device = 'cuda' if cuda else 'cpu'
 
+class Regularization(torch.nn.Module):
+    def __init__(self, dim=33):
+        super(Regularization,self).__init__()
 
+        self.weight_r = torch.ones(3,dim,dim,dim-1, dtype=torch.float)
+        self.weight_r[:,:,:,(0,dim-2)] *= 2.0
+        self.weight_g = torch.ones(3,dim,dim-1,dim, dtype=torch.float)
+        self.weight_g[:,:,(0,dim-2),:] *= 2.0
+        self.weight_b = torch.ones(3,dim-1,dim,dim, dtype=torch.float)
+        self.weight_b[:,(0,dim-2),:,:] *= 2.0
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, LUT):
+
+        dif_r = LUT.LUT[:,:,:,:-1] - LUT.LUT[:,:,:,1:]
+        dif_g = LUT.LUT[:,:,:-1,:] - LUT.LUT[:,:,1:,:]
+        dif_b = LUT.LUT[:,:-1,:,:] - LUT.LUT[:,1:,:,:]
+        tv = torch.mean(torch.mul((dif_r ** 2),self.weight_r)) + torch.mean(torch.mul((dif_g ** 2),self.weight_g)) + torch.mean(torch.mul((dif_b ** 2),self.weight_b))
+
+        mn = torch.mean(self.relu(dif_r)) + torch.mean(self.relu(dif_g)) + torch.mean(self.relu(dif_b))
+
+        return tv, mn
+    
+reg = Regularization()
 
 criterion_pixelwise = torch.nn.MSELoss()
 LUT0 = Generator3DLUT(initialtype='identity')
@@ -33,6 +57,10 @@ if cuda:
     LUT2 = LUT2.cuda()
     classifier = classifier.cuda()
     criterion_pixelwise=criterion_pixelwise.cuda()
+    reg.cuda()
+    reg.weight_b = reg.weight_b.type(Tensor)
+    reg.weight_r = reg.weight_r.type(Tensor)
+    reg.weight_g = reg.weight_g.type(Tensor)
 opt_func = torch.optim.Adam
 
 def generator_train(img,imgT):
@@ -74,10 +102,11 @@ opt = parser.parse_args()
 
 global dataloader
 
-def train():
+def train(R_s = True, R_m = True, lambda_s = 1e-3, lambda_m = 1):
     print(len(dataloader))
     Pretime = time.time()
     optimizer = opt_func(itertools.chain(classifier.parameters(), LUT0.parameters(), LUT1.parameters(), LUT2.parameters()),lr=opt.lr)
+    
     for epoch in range(opt.epoch):
         classifier.train()
         pretime = time.time()
@@ -88,7 +117,16 @@ def train():
             real_B = real_B.to(device)
             optimizer.zero_grad()
             pred_B,weihgts_norm = generator_train(input_A,input_T)
+            tv0, mn0 = reg(LUT0)
+            tv1, mn1 = reg(LUT1)
+            tv2, mn2 = reg(LUT2)
+            tv = tv0 + tv1 + tv2
+            mn = mn0 + mn1 + mn2
             loss = criterion_pixelwise(real_B,pred_B)
+            if (R_s):
+                loss = loss + lambda_s * (weihgts_norm + tv)
+            if (R_m):
+                loss = loss + lambda_m * (mn)
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -104,12 +142,39 @@ def train():
     torch.save(classifier.state_dict(), "saved_models/classifier.pth")
 
 def transform_img(img_input,img_exptC,filename,mode='train'):
-    print(filename)
+    #print(filename)
     if (mode == 'test'):
         img_input = TF.to_tensor(img_input)
         img_exptC = TF.to_tensor(img_exptC)
+        T = img_input.clone()
+        T = T*255
+        N = img_input.size(1)*img_input.size(2)
+        N/=32.0
+        L = [0 for i in range(256)]
+        R = [32 for i in range(256)]
+        V = [0.0 for i in range(33)]
+        def trans(x,*y):
+            l = V[L[round(x)]]
+            r = V[R[round(x)]]
+            return (L[round(x)]*(255.0/32.0) + (x-l)/(r-l)*255.0/32.0)
+        for color in range(img_input.size(0)):
+            V[0]=0
+            V[32]=255
+            preC = 0
+            T1 = torch.flatten(T[color])
+            for i in range(1,32):
+                C = (T1.kthvalue(round(N*i))).values.int().item()
+                oriC = i*255.0/32.0
+                C = (oriC+oriC+C)/3.0
+                V[i]=C
+            for i in range(32):
+                for j in range(math.ceil(V[i]),int(V[i+1])+1):
+                    L[j]=i
+                    R[j]=i+1
+            T[color].map_(T[color],trans)
+        T = ((T/255)-0.5)*2.0
         img_input = (img_input-0.5)*2
-        return (img_input, img_input.transpose(0,2).transpose(0,1),img_exptC,filename)
+        return (img_input, T.transpose(0,2).transpose(0,1),img_exptC,filename)
     
     ratio_H = np.random.uniform(0.6,1.0)
     ratio_W = np.random.uniform(0.6,1.0)
@@ -129,27 +194,31 @@ def transform_img(img_input,img_exptC,filename,mode='train'):
 
     a = np.random.uniform(0.8,1.2)
     img_input = TF.adjust_saturation(img_input,a)
-    #img_input = (img_input-0.5)*2
     img_input = TF.to_tensor(img_input)
     T = img_input.clone()
-    T=(T*255)
+    T = T*255
     N = img_input.size(1)*img_input.size(2)
     N/=32
+    L = [0 for i in range(256)]
+    R = [32 for i in range(256)]
+    V = [0.0 for i in range(33)]
+    def trans(x,*y):
+        l = V[L[round(x)]]
+        r = V[R[round(x)]]
+        return (L[round(x)]*(255.0/32.0) + (x-l)/(r-l)*255.0/32.0)
     for color in range(img_input.size(0)):
-        L = [0 for i in range(256)]
-        R = [255 for i in range(256)]
-        preC = 0
+        V[0]=0
+        V[32]=255
         T1 = torch.flatten(T[color])
         for i in range(1,32):
             C = (T1.kthvalue(round(N*i))).values.int().item()
-            if (C == preC): C+=1
-            for j in range(preC,C+1):
-                L[j]=preC
-                R[j]=C
-        def trans(x,*y):
-            l = L[round(x)]
-            r = R[round(x)]
-            return (l + (T[color][i][j]-l)/(r-l))
+            oriC = i*255.0/32.0
+            C = (oriC+oriC+C)/3.0 #稍微根据颜色的分布偏离均匀点
+            V[i]=C
+        for i in range(32):
+            for j in range(math.ceil(V[i]),int(V[i+1])+1):
+                L[j]=i
+                R[j]=i+1
         T[color].map_(T[color],trans)
     T = ((T/255)-0.5)*2.0
 
@@ -167,7 +236,6 @@ def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
         input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
         expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         set1_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='train'))
-        if (i>10): break
         #set1_input_files.append(os.path.join(root,"input","JPG/480p",input_files[i][:-1] + ".jpg"))
         #set1_expert_files.append(os.path.join(root,"expertC","JPG/480p",input_files[i][:-1] + ".jpg"))
 
@@ -187,7 +255,6 @@ def getdataset(root, mode="train", unpaird_data="fiveK", combined=True):
         input_file = Image.open(os.path.join(root,"origin_jpgs",input_files[i][:-1]))
         expect_file = Image.open(os.path.join(root,"new_jpgs",input_files[i][:-1]))
         test_images.append(transform_img(input_file,expect_file,input_files[i][:-1],mode='test'))
-        if (i>10): break
 
     # if combined:
     #     set1_images = set1_images + set2_images
@@ -198,7 +265,6 @@ if __name__ == '__main__':
     
     traindata,testdata = getdataset("data/%s"%opt.dataset,mode='train')
     dataloader = DataLoader(traindata,batch_size=opt.batchsize,shuffle=True,num_workers=2)
-    torch.save(dataloader,'dataloader.dat')
     train()
     for (i,imgs) in enumerate(testdata):
         if (i==0):
