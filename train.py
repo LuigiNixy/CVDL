@@ -1,5 +1,6 @@
 from models import Classifier
 from models import Generator3DLUT
+from models import MergeWeight
 import numpy as np
 import os   
 import itertools
@@ -51,6 +52,7 @@ LUT0 = Generator3DLUT(initialtype='identity')
 LUT1 = Generator3DLUT(initialtype='zero')
 LUT2 = Generator3DLUT(initialtype='zero')
 classifier = Classifier()
+mergedWeight = MergeWeight()
 if cuda:
     LUT0 = LUT0.cuda()
     LUT1 = LUT1.cuda()
@@ -64,10 +66,23 @@ if cuda:
 opt_func = torch.optim.Adam
 
 def generator_train(img,imgT):
-
+    _,h,w = img.shape
     pred = classifier(img).squeeze()
+    pred_1 = classifier(img[:,0:(h//2),0:(w//2)])
+    pred_2 = classifier(img[:,(h//2) + 1 :h,0:(w//2)])
+    pred_3 = classifier(img[:,(h//2) + 1 :h,(w//2) + 1 : w])
+    pred_4 = classifier(img[:,0:(h//2),(w//2) + 1 : w])
     if len(pred.shape) == 1:
         pred = pred.unsqueeze(0)
+    if len(pred_1.shape) == 1:
+        pred_1 = pred_1.unsqueeze(0)
+    if len(pred_2.shape) == 1:
+        pred_2 = pred_2.unsqueeze(0)
+    if len(pred_3.shape) == 1:
+        pred_3 = pred_3.unsqueeze(0)
+    if len(pred_4.shape) == 1:
+        pred_4 = pred_4.unsqueeze(0)
+    weights = mergedWeight(img)
     gen_A0 = LUT0(imgT)
     gen_A1 = LUT1(imgT)
     gen_A2 = LUT2(imgT)
@@ -76,20 +91,52 @@ def generator_train(img,imgT):
 
     combine_A = img.new(img.size())
     for b in range(img.size(0)):
-        combine_A[b,:,:,:] = pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:] #+ pred[b,3] * gen_A3[b,:,:,:] + pred[b,4] * gen_A4[b,:,:,:]
-
+        x,y = b//w, b - b//w
+        combine_A[b,:,:,:] = weights[0] * (pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:]) #+ pred[b,3] * gen_A3[b,:,:,:] + pred[b,4] * gen_A4[b,:,:,:]
+        if x <= h//2 and y <= w // 2:
+            combine_A[b,:,:,:] += weights[1] * (pred_1[b,0] * gen_A0[b,:,:,:] + pred_1[b,1] * gen_A1[b,:,:,:] + pred_1[b,2] * gen_A2[b,:,:,:])
+        elif x > h//2 and y <= w//2:
+            combine_A[b,:,:,:] += weights[1] * (pred_2[b,0] * gen_A0[b,:,:,:] + pred_2[b,1] * gen_A1[b,:,:,:] + pred_2[b,2] * gen_A2[b,:,:,:])
+        elif x > h//2 and y > w//2:
+            combine_A[b,:,:,:] += weights[1] * (pred_3[b,0] * gen_A0[b,:,:,:] + pred_3[b,1] * gen_A1[b,:,:,:] + pred_3[b,2] * gen_A2[b,:,:,:])
+        else:
+            combine_A[b,:,:,:] += weights[1] * (pred_4[b,0] * gen_A0[b,:,:,:] + pred_4[b,1] * gen_A1[b,:,:,:] + pred_4[b,2] * gen_A2[b,:,:,:])
     return combine_A, weights_norm
+
 def generate_img(img,imgT):
+    _,h,w = img.shape
     classifier.eval()
-    pred = classifier(inputA).squeeze()
+    pred = classifier(img).squeeze()
+    pred_1 = classifier(img[:,0:(h//2),0:(w//2)])
+    pred_2 = classifier(img[:,(h//2) + 1 :h,0:(w//2)])
+    pred_3 = classifier(img[:,(h//2) + 1 :h,(w//2) + 1 : w])
+    pred_4 = classifier(img[:,0:(h//2),(w//2) + 1 : w])
     if len(pred.shape) == 1:
         pred = pred.unsqueeze(0)
+    if len(pred_1.shape) == 1:
+        pred_1 = pred_1.unsqueeze(0)
+    if len(pred_2.shape) == 1:
+        pred_2 = pred_2.unsqueeze(0)
+    if len(pred_3.shape) == 1:
+        pred_3 = pred_3.unsqueeze(0)
+    if len(pred_4.shape) == 1:
+        pred_4 = pred_4.unsqueeze(0)
+    weights = mergedWeight(img)
     gen_A0 = LUT0(imgT)
     gen_A1 = LUT1(imgT)
     gen_A2 = LUT2(imgT)
     combine_A = img.new(img.size())
     for b in range(img.size(0)):
-        combine_A[b,:,:,:] = pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:]
+        x,y = b//w, b - b//w
+        combine_A[b,:,:,:] = weights[0] * (pred[b,0] * gen_A0[b,:,:,:] + pred[b,1] * gen_A1[b,:,:,:] + pred[b,2] * gen_A2[b,:,:,:]) #+ pred[b,3] * gen_A3[b,:,:,:] + pred[b,4] * gen_A4[b,:,:,:]
+        if x <= h//2 and y <= w // 2:
+            combine_A[b,:,:,:] += weights[1] * (pred_1[b,0] * gen_A0[b,:,:,:] + pred_1[b,1] * gen_A1[b,:,:,:] + pred_1[b,2] * gen_A2[b,:,:,:])
+        elif x > h//2 and y <= w//2:
+            combine_A[b,:,:,:] += weights[1] * (pred_2[b,0] * gen_A0[b,:,:,:] + pred_2[b,1] * gen_A1[b,:,:,:] + pred_2[b,2] * gen_A2[b,:,:,:])
+        elif x > h//2 and y > w//2:
+            combine_A[b,:,:,:] += weights[1] * (pred_3[b,0] * gen_A0[b,:,:,:] + pred_3[b,1] * gen_A1[b,:,:,:] + pred_3[b,2] * gen_A2[b,:,:,:])
+        else:
+            combine_A[b,:,:,:] += weights[1] * (pred_4[b,0] * gen_A0[b,:,:,:] + pred_4[b,1] * gen_A1[b,:,:,:] + pred_4[b,2] * gen_A2[b,:,:,:])
     return combine_A
 
 parser = argparse.ArgumentParser()
@@ -105,7 +152,7 @@ global dataloader
 def train(R_s = True, R_m = True, lambda_s = 1e-3, lambda_m = 1):
     print(len(dataloader))
     Pretime = time.time()
-    optimizer = opt_func(itertools.chain(classifier.parameters(), LUT0.parameters(), LUT1.parameters(), LUT2.parameters()),lr=opt.lr)
+    optimizer = opt_func(itertools.chain(classifier.parameters(), LUT0.parameters(), LUT1.parameters(), LUT2.parameters(), MergeWeight.parameters()),lr=opt.lr)
     
     for epoch in range(opt.epoch):
         classifier.train()
@@ -138,8 +185,8 @@ def train(R_s = True, R_m = True, lambda_s = 1e-3, lambda_m = 1):
         print("epoch:{} time:{:.4f}".format(epoch,nowtime-Pretime))
         Pretime = nowtime
     LUTs = {"0": LUT0.state_dict(),"1": LUT1.state_dict(),"2": LUT2.state_dict()}
-    torch.save(LUTs, "saved_models/LUTs.pth")
-    torch.save(classifier.state_dict(), "saved_models/classifier.pth")
+    torch.save(LUTs, "LUTs.pth")
+    torch.save(classifier.state_dict(), "classifier.pth")
 
 def transform_img(img_input,img_exptC,filename,mode='train'):
     #print(filename)
@@ -267,11 +314,13 @@ if __name__ == '__main__':
     dataloader = DataLoader(traindata,batch_size=opt.batchsize,shuffle=True,num_workers=2)
     train()
     for (i,imgs) in enumerate(testdata):
-        if (i==0):
+        if (i>=0):
             inputA,imgT,expctC,filename = imgs
             inputA = inputA.to(device)
             imgT = imgT.to(device)
             inputA = inputA.unsqueeze(0)
+            subimages = []
+            
             imgT = imgT.unsqueeze(0)
             preB = generate_img(inputA,imgT).squeeze(0)
             #preB = torch.round(preB*255)

@@ -44,3 +44,21 @@ class Classifier(nn.Module):
     def forward(self, img_input):
         return self.model(img_input)
 
+class MergeWeight(nn.Module):
+    def __ini__(self):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Upsample(size=(256,256),mode='bilinear'),
+            nn.Conv2d(3, 6, 5, stride=2, padding=1),
+            nn.Conv2d(6,16,5, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.4),
+            nn.Linear(16*5*5, 120),
+            nn.InstanceNorm1d(120),
+            nn.Linear(120,84),
+            nn.Linear(84, 2),
+            nn.InstanceNorm1d(2) 
+        )
+    
+    def forward(self, img):
+        return self.model(img)
